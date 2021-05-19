@@ -4,12 +4,9 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.IO;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using Azure.Storage.Blobs.Models;
 using System;
 using Microsoft.AspNetCore.Http;
-using Domain;
 
 namespace BlobStorage
 {
@@ -30,6 +27,7 @@ namespace BlobStorage
             _blobServiceClient = new BlobServiceClient(blobStorageConfig.ConnectionString);
         }
 
+
         public async Task<IFileDescriptor?> AddFileFromStream(Stream file, long size, string fileName)
         {
             if (file == null) return null;
@@ -40,13 +38,14 @@ namespace BlobStorage
             // Blob MetaData
             IDictionary<string, string> metadata = new Dictionary<string, string>
             {
-                { FileNameMetaDataAttribut, fileName}
+                { FileNameMetaDataAttribut, fileName},
             };
             // Blob ContentType
             BlobHttpHeaders blobHeaders = new BlobHttpHeaders()
             {
                 ContentType = contentType,
             };
+            file.Position = 0;
             await blobClient.UploadAsync(file, blobHeaders, metadata);
             return new FileDescriptor()
             {
@@ -64,20 +63,17 @@ namespace BlobStorage
             {
                 if (formFile.Length > 0)
                 {
-                    using (var memoryStream = new MemoryStream())
-                    {
-                        await formFile.CopyToAsync(memoryStream);
-                        var fileDescriptor = await AddFileFromStream(memoryStream, formFile.Length, formFile.FileName);
-                        if (fileDescriptor != null) result.Add(fileDescriptor);
-                    }
+                    var fileDescriptor = await AddFileFromStream(formFile.OpenReadStream(), formFile.Length, formFile.FileName);
+                    if (fileDescriptor != null) result.Add(fileDescriptor);
                 }
             }
+            LogAllFiles();
             return (result.Count > 0) ? result : null;
         }
 
-        public async Task<IFileDescriptor> GetBlobMetaDataAsync(FileRef fileRef)
+        public async Task<IFileDescriptor> GetBlobMetaDataAsync(string fileId)
         {
-            string fileId = fileRef.Value;
+            //string fileId = fileRef.Value;
             var containerClient = await GetBlobContainerAsync();
             BlobClient blobClient = containerClient.GetBlobClient(fileId);
             if (await blobClient.ExistsAsync())
@@ -98,25 +94,59 @@ namespace BlobStorage
             }
         }
 
-        public Task<HttpResponseMessage> GetThumbnailAsHTTPResponseAsync(string id, bool fill, int? x, int? y)
+        public async Task<BlobDownloadInfo?> GetFileStreamAsync(string fileId, ContentDisposition contentDisposition)
         {
-            throw new System.NotImplementedException();
+            var containerClient = await GetBlobContainerAsync();
+            BlobClient blobClient = containerClient.GetBlobClient(fileId);
+            if (await blobClient.ExistsAsync())
+            {
+                return await blobClient.DownloadAsync();
+            }
+            else
+            {
+                return null;
+            }
         }
 
-        public Task<HttpResponseMessage> GetFileAsHTTPResponseAsync(FileRef id, ContentDisposition contentDisposition, RangeHeaderValue rangeHeader)
+        public Task<Stream?> GetThumbnailStreamAsync(string id, bool fill, int? x, int? y)
         {
             throw new NotImplementedException();
+        }
+
+        private async void LogAllFiles()
+        {
+            Console.WriteLine("\t ############### All Files ###############");
+            await foreach (BlobItem blobItem in _containerClient.GetBlobsAsync())
+            {
+                Console.WriteLine("\t" + blobItem.Name);
+            }
+            Console.WriteLine("\t ############### / All Files ###############");
+
         }
 
         private async Task<BlobContainerClient> GetBlobContainerAsync()
         {
             if (_containerClient == null)
             {
-                _logger.LogInformation("Creating storage container", _config.ContainerName);
-                _containerClient = await _blobServiceClient.CreateBlobContainerAsync(_config.ContainerName);
-                _logger.LogInformation("Container has been created");
+                try
+                {
+                    _logger.LogInformation("Try Creating storage container", _config.ContainerName);
+                    _containerClient = await _blobServiceClient.CreateBlobContainerAsync(_config.ContainerName);
+                    _logger.LogInformation("Container has been created");
+                }
+                catch (Exception)
+                {
+                    _containerClient = _blobServiceClient.GetBlobContainerClient(_config.ContainerName);
+                    _logger.LogInformation("Container was found");
+                }
+
             }
             return _containerClient;
+        }
+
+        public string GetFileNameMetaDataAttribut()
+        {
+            return FileNameMetaDataAttribut;
         }
     }
 }

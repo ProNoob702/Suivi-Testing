@@ -1,12 +1,16 @@
 ﻿using BlobStorage;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
 
 namespace Statsh.Server.Controllers
 {
-    [Route("api/[controller]")]
+    [Route("[controller]")]
     [ApiController]
     public class FilesController : ControllerBase
     {
@@ -16,19 +20,46 @@ namespace Statsh.Server.Controllers
             _blobStorageService = blobStorageService;
         }
 
-        //Task<ActionResult<IEnumerable<BlobStorage.IFileDescriptor>>> 
-        public async Task<IEnumerable<BlobStorage.IFileDescriptor>?> Post([FromForm] List<IFormFile> files)
+        public class RequestModel
         {
-            // Lire https://docs.microsoft.com/en-us/aspnet/core/mvc/models/file-uploads?view=aspnetcore-5.0&viewFallbackFrom=aspnetcore-2.0
-            //throw new NotImplementedException();
-            //if (files == null || files.Count > 0)
-            //{
-            return await _blobStorageService.AddFilesFromHTTPRequestAsync(files);
-            //}
-            //else
-            //{
-            //    return BadRequest("The uploaded files empty");
-            //}
+            public IEnumerable<IFormFile> Files { get; set; }
+        }
+
+        // check out : https://stackoverflow.com/questions/38897764/asp-net-core-content-disposition-attachment-inline
+        [HttpGet("{fileId}/{contentDisposition}")]
+        public async Task<IActionResult> GetFile([FromRoute] string fileId, [FromRoute] ContentDisposition contentDisposition)
+        {
+            var downloadFileInfo = await _blobStorageService.GetFileStreamAsync(fileId, contentDisposition);
+            if (downloadFileInfo != null)
+            {
+                if (contentDisposition == ContentDisposition.Attachment)
+                {
+                    var fileName = downloadFileInfo.Details.Metadata[_blobStorageService.GetFileNameMetaDataAttribut()];
+                    return File(downloadFileInfo.Content, downloadFileInfo.ContentType, fileName);
+                }
+                else
+                {
+                    return File(downloadFileInfo.Content, downloadFileInfo.ContentType);
+                }
+            }
+            else
+            {
+                return BadRequest("File Not Found");
+            }
+        }
+
+        [HttpPost]
+        public async Task<ActionResult<IEnumerable<IFileDescriptor>?>> Post([FromForm] RequestModel request)
+        {
+            if (request.Files == null || request.Files.Any())
+            {
+                var filesDescriptors = await _blobStorageService.AddFilesFromHTTPRequestAsync(request.Files);
+                return Ok(filesDescriptors);
+            }
+            else
+            {
+                return BadRequest("The uploaded files empty");
+            }
         }
     }
 }
