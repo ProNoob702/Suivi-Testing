@@ -15,8 +15,8 @@ namespace BlobStorage
 
         //  Task<HttpResponseMessage> GetFileAsHTTPResponse(FileRef id, ContentDisposition contentDisposition, RangeHeaderValue? rangeHeader);
         public Task<IEnumerable<IFileDescriptor>?> AddFilesFromHTTPRequestAsync(IEnumerable<IFormFile> request);
-        public Task<IFileDescriptor?> AddFileFromStream(Stream file, long size, string fileName);
-        public Task<BlobDownloadInfo?> GetFileStreamAsync(string id, ContentDisposition contentDisposition);
+        public Task<IFileDescriptor?> AddFileFromStream(Stream file, long size, string fileName, string? fileId);
+        public Task<BlobDownloadInfo?> GetFileStreamAsync(string id);
         public Task<Stream?> GetThumbnailStreamAsync(string id, bool fill, int? x, int? y);
         public string GetFileNameMetaDataAttribut();
     }

@@ -7,6 +7,7 @@ using System.IO;
 using Azure.Storage.Blobs.Models;
 using System;
 using Microsoft.AspNetCore.Http;
+using System.Drawing.Imaging;
 
 namespace BlobStorage
 {
@@ -28,10 +29,10 @@ namespace BlobStorage
         }
 
 
-        public async Task<IFileDescriptor?> AddFileFromStream(Stream file, long size, string fileName)
+        public async Task<IFileDescriptor?> AddFileFromStream(Stream file, long size, string fileName, string? defaultfileId = null)
         {
             if (file == null) return null;
-            string fileId = Ulid.NewUlid().ToString();
+            string fileId = defaultfileId != null ? defaultfileId : Ulid.NewUlid().ToString();
             string contentType = BlobStorageUtils.GetContentType(fileName);
             var containerClient = await GetBlobContainerAsync();
             BlobClient blobClient = containerClient.GetBlobClient(fileId);
@@ -94,7 +95,7 @@ namespace BlobStorage
             }
         }
 
-        public async Task<BlobDownloadInfo?> GetFileStreamAsync(string fileId, ContentDisposition contentDisposition)
+        public async Task<BlobDownloadInfo?> GetFileStreamAsync(string fileId)
         {
             var containerClient = await GetBlobContainerAsync();
             BlobClient blobClient = containerClient.GetBlobClient(fileId);
@@ -108,9 +109,39 @@ namespace BlobStorage
             }
         }
 
-        public Task<Stream?> GetThumbnailStreamAsync(string id, bool fill, int? x, int? y)
+        public async Task<Stream?> GetThumbnailStreamAsync(string fileId, bool fill, int? x, int? y)
         {
-            throw new NotImplementedException();
+            var key = string.Format("{0}{1}_{2}_{3}", fileId, fill ? "_fill" : "", x, y);
+            var containerClient = await GetBlobContainerAsync();
+            BlobClient blobClient = containerClient.GetBlobClient(key);
+            if (!await blobClient.ExistsAsync())
+            {
+                var sourceDownloadInfo = await GetFileStreamAsync(fileId);
+                if (sourceDownloadInfo == null) // source not found
+                {
+                    throw new ArgumentException(string.Format("FileId: {0} not found", fileId));
+                }
+                // create new thumbnail and persist it
+                var thumbBitmap = BlobStorageUtils.BuildThumbnailBitmap(sourceDownloadInfo, fill, x, y);
+                if (thumbBitmap != null)
+                {
+                    MemoryStream memoryStream = new MemoryStream();
+                    thumbBitmap.Save(memoryStream, ImageFormat.Jpeg);
+                    await AddFileFromStream(memoryStream, memoryStream.Length, key, blobClient.Name);
+                    memoryStream.Seek(0, SeekOrigin.Begin);
+                    return memoryStream;
+                }
+                else
+                {
+                    return null;
+                }
+            }
+            else
+            {
+                // thumbnail already exists 
+                var downloadedBlob = await blobClient.DownloadAsync();
+                return downloadedBlob.Value.Content;
+            }
         }
 
         private async void LogAllFiles()
@@ -121,7 +152,6 @@ namespace BlobStorage
                 Console.WriteLine("\t" + blobItem.Name);
             }
             Console.WriteLine("\t ############### / All Files ###############");
-
         }
 
         private async Task<BlobContainerClient> GetBlobContainerAsync()

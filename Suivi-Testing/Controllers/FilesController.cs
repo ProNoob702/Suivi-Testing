@@ -29,7 +29,7 @@ namespace Statsh.Server.Controllers
         [HttpGet("{fileId}/{contentDisposition}")]
         public async Task<IActionResult> GetFile([FromRoute] string fileId, [FromRoute] ContentDisposition contentDisposition)
         {
-            var downloadFileInfo = await _blobStorageService.GetFileStreamAsync(fileId, contentDisposition);
+            var downloadFileInfo = await _blobStorageService.GetFileStreamAsync(fileId);
             if (downloadFileInfo != null)
             {
                 if (contentDisposition == ContentDisposition.Attachment)
